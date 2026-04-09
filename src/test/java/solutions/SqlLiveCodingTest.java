@@ -1,69 +1,87 @@
 package solutions;
 
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
+import java.sql.*;
+import java.util.*;
+import java.util.stream.Collectors;
 
-public class SqlLiveCodingTest {
+@Testcontainers
+class SqlLiveCodingTest {
+
+    @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
     private TestResultWriter writer;
 
-    @BeforeAll
-    static void startContainer() {
-        postgres.start();
-    }
-
     @BeforeEach
-    void setup(TestInfo testInfo) throws Exception {
-        // Создаем новый лог-файл для каждого теста (или метода)
-        writer = new TestResultWriter(testInfo.getDisplayName().replace("()", ""));
+    void setUp(TestInfo testInfo) throws Exception {
+        writer = new TestResultWriter(testInfo.getDisplayName());
+        // Инициализируем базу схемой и данными (без лога результата)
         executeSqlFile("src/main/resources/sql/init.sql", false);
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {6})
-    void runTask(int taskNumber) throws Exception {
-        writer.write("--- Запуск задачи №" + taskNumber + " ---");
+    @ValueSource(ints = {7})
+    void task(int taskNumber) throws Exception {
+        writer.write("# Результат выполнения задачи №" + taskNumber);
         executeSqlFile(String.format("src/main/resources/sql/task%d.sql", taskNumber), true);
     }
 
-    private void executeSqlFile(String path, boolean logResult) throws Exception {
+    private void executeSqlFile(String path, boolean isTask) throws Exception {
         String sql = Files.readString(Path.of(path));
-        try (var conn = DriverManager.getConnection(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
-            var stmt = conn.createStatement();
-            stmt.execute(sql);
+        try (Connection conn = DriverManager.getConnection(postgres.getJdbcUrl(),
+                postgres.getUsername(), postgres.getPassword())) {
 
-            if (logResult) {
-                var rs = stmt.getResultSet();
-                if (rs != null) {
-                    writeResultSetToFile(rs);
-                }
+            Statement stmt = conn.createStatement();
+            boolean hasResultSet = stmt.execute(sql);
+
+            if (isTask && hasResultSet) {
+                writer.write("```text\n" + formatResultSet(stmt.getResultSet()) + "\n```");
             }
         }
     }
 
-    private void writeResultSetToFile(ResultSet rs) throws Exception {
-        var metaData = rs.getMetaData();
-        int columns = metaData.getColumnCount();
+    private String formatResultSet(ResultSet rs) throws Exception {
+        ResultSetMetaData meta = rs.getMetaData();
+        int cols = meta.getColumnCount();
+        List<String> headers = new ArrayList<>();
+        for (int i = 1; i <= cols; i++) headers.add(meta.getColumnName(i));
 
+        List<List<String>> data = new ArrayList<>();
         while (rs.next()) {
-            StringBuilder row = new StringBuilder();
-            for (int i = 1; i <= columns; i++) {
-                row.append(metaData.getColumnName(i))
-                        .append(": ")
-                        .append(rs.getObject(i))
-                        .append(" | ");
-            }
-            writer.write(row.toString());
+            List<String> row = new ArrayList<>();
+            for (int i = 1; i <= cols; i++) row.add(String.valueOf(rs.getObject(i)));
+            data.add(row);
         }
+
+        int[] widths = new int[cols];
+        for (int i = 0; i < cols; i++) {
+            widths[i] = headers.get(i).length();
+            for (List<String> row : data) widths[i] = Math.max(widths[i], row.get(i).length());
+        }
+
+        String line = "+" + Arrays.stream(widths).mapToObj(w -> "-".repeat(w + 2)).collect(Collectors.joining("+")) + "+\n";
+        StringBuilder sb = new StringBuilder(line);
+
+        // Header
+        sb.append("|");
+        for (int i = 0; i < cols; i++) sb.append(String.format(" %-" + widths[i] + "s |", headers.get(i)));
+        sb.append("\n").append(line.replace("-", "="));
+
+        // Rows
+        for (List<String> row : data) {
+            sb.append("|");
+            for (int i = 0; i < cols; i++) sb.append(String.format(" %-" + widths[i] + "s |", row.get(i)));
+            sb.append("\n");
+        }
+        return sb.append(line).toString();
     }
 }

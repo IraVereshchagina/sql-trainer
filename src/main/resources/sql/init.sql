@@ -1,5 +1,10 @@
 -- Сброс старой таблицы, если она была
 DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS multiverse_sn.guild_members CASCADE;
+DROP TABLE IF EXISTS multiverse_sn.friendships CASCADE;
+DROP TABLE IF EXISTS multiverse_sn.guilds CASCADE;
+DROP TABLE IF EXISTS multiverse_sn.posts CASCADE;
+DROP TABLE IF EXISTS multiverse_sn.users CASCADE;
 
 -- Создание таблицы пользователей
 CREATE TABLE users (
