@@ -29,7 +29,7 @@ public class SqlLiveCodingTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {5})
+    @ValueSource(ints = {6})
     void runTask(int taskNumber) throws Exception {
         writer.write("--- Запуск задачи №" + taskNumber + " ---");
         executeSqlFile(String.format("src/main/resources/sql/task%d.sql", taskNumber), true);
